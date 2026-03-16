@@ -1,9 +1,7 @@
-# ani-cli-wrapper
 # ani-cli-wrapper 🎬
 
 A powerful, user-friendly wrapper for [ani-cli](https://github.com/pystardust/ani-cli) with an interactive fzf-based menu system, AniList integration, and DUB/SUB fallback support.
 
-![ani-cli-wrapper Demo](https://via.placeholder.com/800x400.png?text=ani-cli-wrapper+Demo)
 
 ## ✨ Features
 
@@ -17,8 +15,6 @@ A powerful, user-friendly wrapper for [ani-cli](https://github.com/pystardust/an
 ### 🚀 Advanced Features
 - **🎨 AniList Discovery** - Browse trending, popular, top-rated, seasonal, and upcoming anime
 - **🔄 Auto Fallback** - Automatically try SUB if DUB fails
-- **🖼️ Anime Posters** - ASCII art posters (requires `chafa`)
-- **📊 History Statistics** - Track your watching habits
 - **🔍 Smart Search** - Uses Romaji for better compatibility with ani-cli
 
 ## 📋 Requirements
@@ -30,24 +26,8 @@ A powerful, user-friendly wrapper for [ani-cli](https://github.com/pystardust/an
 - `jq` - JSON processing (recommended)
 
 ### Optional (for enhanced features)
-- `chafa` - For ASCII art posters
-- `mpv` or `vlc` - Video players
+- `ani-skip` - For auto-skiping intro
 
-### Installation Commands by OS
-
-```bash
-# Ubuntu/Debian
-sudo apt install fzf curl jq chafa mpv
-
-# Arch Linux
-sudo pacman -S fzf curl jq chafa mpv
-
-# macOS
-brew install fzf curl jq chafa mpv
-
-# Termux (Android)
-pkg install fzf curl jq mpv
-```
 
 ## 🚀 Installation
 
@@ -78,15 +58,6 @@ chmod +x ani-wrapper.sh
 ./ani-wrapper.sh
 ```
 
-### Command Line Options
-```bash
-ani-wrapper --help        # Show help
-ani-wrapper --version     # Show version
-ani-wrapper --debug       # Run in debug mode
-ani-wrapper -s "One Piece" # Quick search
-ani-wrapper -d "Jujutsu Kaisen" # Quick download
-```
-
 ### Main Menu
 
 ```
@@ -111,15 +82,12 @@ ani-wrapper -d "Jujutsu Kaisen" # Quick download
 ### 1. 🔍 Search and Watch Anime
 - Choose language preference (DUB/SUB) before searching
 - Recent searches saved for quick access
-- ASCII art poster display (if chafa installed)
 - Auto-fallback to SUB if DUB fails
 
 ### 2. 📺 Discover Anime (AniList)
 Browse and select from curated lists:
 - **🔥 Trending Now** - Most popular this week
 - **⭐ Most Popular** - All-time popular anime
-- **🏆 Top Rated** - Highest scored anime
-- **🌸 Current Season** - Airing this season
 - **🚀 Upcoming** - Soon to be released
 
 Each selection shows:
@@ -139,14 +107,12 @@ Each selection shows:
   - Single episode
   - Range (e.g., 1-12)
   - All episodes
-- Auto-fallback for failed downloads
 
 ### 4. ⚙️ Settings
 ```
 🎬 Quality (current: 1080p)
 🎮 Player (current: mpv)
 🔤 Default Language (current: dub)
-🎯 Dub by Default (current: false)
 🔄 Auto Fallback to SUB (current: true)
 📁 Download Directory (current: ~/Videos/ani-cli)
 💾 Save History (current: true)
@@ -161,25 +127,6 @@ Each selection shows:
 - Remove from watchlist
 - Language memory (remembers if you added as DUB/SUB)
 
-### 6. 📊 History Statistics
-- Total entries count
-- Unique anime count
-- Total episodes watched
-- Most watched anime
-- Search through history
-- Clear history option
-
-## 🎨 Keyboard Shortcuts
-
-In fzf menus:
-| Key | Action |
-|-----|--------|
-| `Type` | Filter/search |
-| `Ctrl+n` / `Ctrl+p` | Navigate up/down |
-| `Enter` | Select |
-| `Esc` / `Ctrl+c` | Cancel |
-| `Tab` | Multi-select |
-| `?` | Toggle preview |
 
 ## 🔧 Configuration
 
@@ -205,28 +152,12 @@ AUTO_FALLBACK=true
 ~/.config/ani-cli-wrapper/
 ├── config                 # Configuration file
 ├── cache/                 # Cache directory
-│   ├── posters/          # ASCII art posters
 │   ├── anilist/          # AniList API cache
 │   └── recent_searches    # Recent search history
 ├── watchlist             # Your personal watchlist
 └── ani-wrapper.log       # Log file
 ```
 
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Q: AniList discovery shows no results?**
-A: Install jq: `sudo apt install jq` (Ubuntu) or `brew install jq` (macOS)
-
-**Q: Posters not showing?**
-A: Install chafa: `sudo apt install chafa`
-
-**Q: Single quotes in titles causing errors?**
-A: Use Romaji titles (e.g., "Hells Paradise" instead of "Hell's Paradise")
-
-**Q: DUB fallback not working?**
-A: Enable in Settings: "Auto Fallback to SUB"
 
 ## 🤝 Contributing
 
@@ -246,13 +177,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 
 - [ani-cli](https://github.com/pystardust/ani-cli) - The amazing CLI anime viewer
 - [AniList](https://anilist.co/) - For the fantastic API
-- [fzf](https://github.com/junegunn/fzf) - The incredible fuzzy finder
-- [chafa](https://hpjansson.org/chafa/) - For image to ASCII conversion
 
-## 📞 Contact & Support
-
-- **GitHub Issues**: [Report a bug](https://github.com/yourusername/ani-cli-wrapper/issues)
-- **Discussions**: [Join the conversation](https://github.com/yourusername/ani-cli-wrapper/discussions)
 
 ## 🎉 Star History
 
