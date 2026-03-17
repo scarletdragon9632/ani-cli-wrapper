@@ -196,7 +196,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 
 ## 🎉 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/ani-cli-wrapper&type=Date)](https://star-history.com/#yourusername/ani-cli-wrapper&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=scarletdragon9632/ani-cli-wrapper&type=Date)](https://star-history.com/#scarletdragon9632/ani-cli-wrapper&Date)
 
 ---
 
