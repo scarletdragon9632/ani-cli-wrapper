@@ -3,7 +3,7 @@
 ### Added
 
 - More categories in AniList Discovery feature
-- English anime title toggle
+- English anime title toggle 
 -
 
 ### Fixed
