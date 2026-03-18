@@ -194,9 +194,6 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 - [ani-cli](https://github.com/pystardust/ani-cli) - The amazing CLI anime viewer
 - [AniList](https://anilist.co/) - For the fantastic API
 
-## 🎉 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/ani-cli-wrapper&type=Date)](https://star-history.com/#yourusername/ani-cli-wrapper&Date)
 
 ---
 
