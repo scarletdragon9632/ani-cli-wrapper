@@ -2,7 +2,7 @@
 
 # ani-cli-wrapper.sh - A user-friendly wrapper for ani-cli with fzf menus
 # Author: Based on community needs
-# Version: 2.3.0 (with AniList Discovery)
+# Version: 1.6.0
 
 set -euo pipefail
 
@@ -29,9 +29,12 @@ DEFAULT_QUALITY="1080p"
 DEFAULT_PLAYER="mpv"
 DEFAULT_LANGUAGE="dub"
 DOWNLOAD_DIR="${HOME}/Videos/ani-cli"
-AUTO_UPDATE=false
 SKIP_INTRO=false
 AUTO_FALLBACK=true
+HEADER_COLOR="CYAN"
+CURRENT_HEADER="default.txt"
+CURRENT_VERSION="1.6.0"
+ENGLISH_TITLE=true
 
 # Create necessary directories
 setup_directories() {
@@ -41,17 +44,18 @@ setup_directories() {
     if [[ ! -f "${CONFIG_FILE}" ]]; then
         cat > "${CONFIG_FILE}" << EOF
 # ani-cli-wrapper Configuration File
+CURRENT_VERSION="1.5.0"
 QUALITY="${DEFAULT_QUALITY}"
 PLAYER="${DEFAULT_PLAYER}"
 LANGUAGE="${DEFAULT_LANGUAGE}"
 DOWNLOAD_DIR="${DOWNLOAD_DIR}"
-AUTO_UPDATE=false
 SKIP_INTRO=false
 RECENT_SEARCHES=5
 AUTO_FALLBACK=true
 HISTORY_FILE="${HOME}/.local/state/ani-cli/ani-hsts"
 HEADER_COLOR="CYAN"
 CURRENT_HEADER="default.txt"
+ANIME_TITLE=true
 EOF
     fi
 }
@@ -192,23 +196,47 @@ fetch_anilist() {
     case "${query_type}" in
         "trending")
             query='{
-              "query": "query { Page(page: 1, perPage: 30) { media(type: ANIME, sort: TRENDING_DESC) { id title { romaji english native } format episodes status description averageScore genres coverImage { large } } } }"
-            }'
-            ;;
+               "query": "query { Page(page: 1, perPage: 50) { media(type: ANIME, sort: TRENDING_DESC) { id title { romaji english native } format episodes status description averageScore genres coverImage { large } trending popularity favourites nextAiringEpisode { airingAt timeUntilAiring episode } } } }"
+    }'
+    ;;
         "popular")
             query='{
-              "query": "query { Page(page: 1, perPage: 30) { media(type: ANIME, sort: POPULARITY_DESC) { id title { romaji english native } format episodes status description averageScore genres coverImage { large } } } }"
+              "query": "query { Page(page: 1, perPage: 50) { media(type: ANIME, sort: POPULARITY_DESC) { id title { romaji english native } format episodes status description averageScore genres coverImage { large } } } }"
             }'
             ;;
         "top_rated")
             query='{
-              "query": "query { Page(page: 1, perPage: 30) { media(type: ANIME, season: \"'"$season"'\", seasonYear: '"$year"') { id title { romaji english native } format episodes status description averageScore genres coverImage { large } } } }"
+              "query": "query { Page(page: 1, perPage: 50) { media(type: ANIME, sort: SCORE_DESC) { id title { romaji english native } format episodes status description averageScore genres coverImage { large } } } }"
+            }'
+            ;;
+        "seasonal")
+            local year=$(date +%Y)
+            local month=$(date +%m)
+            local season=""  # Define season variable
+            
+            # Determine season based on month
+            if [[ $month -ge 3 && $month -le 5 ]]; then
+                season="SPRING"
+            elif [[ $month -ge 6 && $month -le 8 ]]; then
+                season="SUMMER"
+            elif [[ $month -ge 9 && $month -le 11 ]]; then
+                season="FALL"
+            else
+                season="WINTER"
+            fi
+            
+            query='{
+              "query": "query { Page(page: 1, perPage: 50) { media(type: ANIME, season: '"$season"', seasonYear: '"$year"') { id title { romaji english native } format episodes status description averageScore genres coverImage { large } } } }"
             }'
             ;;
         "upcoming")
             query='{
               "query": "query { Page(page: 1, perPage: 30) { media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC) { id title { romaji english native } format episodes status description averageScore genres coverImage { large } } } }"
             }'
+            ;;
+        *)
+            echo -e "${RED}Invalid query type: ${query_type}${NC}" >&2
+            return 1
             ;;
     esac
     
@@ -219,94 +247,6 @@ fetch_anilist() {
     
     echo "${response}" > "${cache_file}"
     echo "${response}"
-}
-
-# Function to fetch and format anime details for preview
-fetch_anime_details() {
-    local anime_id="$1"
-    
-    # Skip if no ID
-    if [[ -z "${anime_id}" ]]; then
-        echo "No anime ID provided"
-        return
-    fi
-    
-    # Fetch anime from AniList API
-fetch_anilist() {
-    local query_type="$1"
-    local cache_file="${ANILIST_CACHE}/${query_type}.json"
-    local cache_age=3600 # 1 hour in seconds
-    
-    # Check if cache exists and is fresh
-    if [[ -f "${cache_file}" ]] && [[ $(($(date +%s) - $(stat -c %Y "${cache_file}" 2>/dev/null || echo 0))) -lt ${cache_age} ]]; then
-        cat "${cache_file}"
-        return
-    fi
-    
-    local query=""
-    case "${query_type}" in
-        "trending")
-            query='{"query":"query { Page(page: 1, perPage: 30) { media(type: ANIME, sort: TRENDING_DESC) { id title { romaji english native } format episodes status averageScore genres } } }"}'
-            ;;
-        "popular")
-            query='{"query":"query { Page(page: 1, perPage: 30) { media(type: ANIME, sort: POPULARITY_DESC) { id title { romaji english native } format episodes status averageScore genres } } }"}'
-            ;;
-        "top_rated")
-            query='{"query":"query { Page(page: 1, perPage: 30) { media(type: ANIME, season: '"$season"', seasonYear: '"$year"') { id title { romaji english native } format episodes status averageScore genres } } }"}'
-            ;;
-        "upcoming")
-            query='{"query":"query { Page(page: 1, perPage: 30) { media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC) { id title { romaji english native } format episodes status averageScore genres } } }"}'
-            ;;
-    esac
-    
-    echo -e "${YELLOW}Fetching data from AniList...${NC}" >&2
-    local response=$(curl -s -X POST "https://graphql.anilist.co" \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        -d "${query}")
-    
-    # Check if response contains errors
-    if echo "${response}" | jq -e '.errors' > /dev/null 2>&1; then
-        local error_msg=$(echo "${response}" | jq -r '.errors[0].message // "Unknown error"')
-        echo -e "${RED}AniList API Error: ${error_msg}${NC}" >&2
-        # If there's an error and cache exists, use cached version
-        if [[ -f "${cache_file}" ]]; then
-            echo -e "${YELLOW}Using cached data...${NC}" >&2
-            cat "${cache_file}"
-            return
-        fi
-    else
-        # Save successful response to cache
-        echo "${response}" > "${cache_file}"
-    fi
-    
-    echo "${response}"
-}
-    
-    # Check if jq is available
-    if ! command -v jq &> /dev/null; then
-        echo "jq not installed. Please install jq for details."
-        return
-    fi
-    
-    # Parse and format the response
-    echo "${response}" | jq -r '
-        .data.Media | 
-        "╔════════════════════════════════════════════╗",
-        "║ " + (.title.english // .title.romaji // .title.native) + " ║",
-        "╠════════════════════════════════════════════╣",
-        "║ Episodes: " + (.episodes // "?" | tostring),
-        "║ Duration: " + (.duration // "?" | tostring) + " min",
-        "║ Status: " + (.status // "Unknown"),
-        "║ Season: " + (.season // "?") + " " + (.year // "?" | tostring),
-        "║ Score: ⭐ " + (.averageScore // "N/A" | tostring),
-        "║ Genres: " + (.genres | join(", ")),
-        "║ Studios: " + ([.studios.nodes[].name] | join(", ")),
-        "╠════════════════════════════════════════════╣",
-        "║ Description:",
-        "║ " + (.description // "No description" | gsub("<[^>]*>"; "") | gsub("\n"; " ") | .[0:400] + "..."),
-        "╚════════════════════════════════════════════╝"
-    ' 2>/dev/null || echo "Error loading details"
 }
 
 # Parse and display AniList results
@@ -325,40 +265,81 @@ show_anilist_results() {
     fi
     
     # Extract anime list with formatted display
-    # Store both English (for display) and Romaji (for search)
+    # Extract trending list with airing info
     local anime_list=$(echo "${json_data}" | jq -r '.data.Page.media[] | 
         "[\(.id)] " + 
-        "DISPLAY: " + (.title.english // .title.romaji // .title.native) + " | " +
-        "SEARCH: " + (.title.romaji // .title.english // .title.native) + " | " +
-        "⭐ " + (.averageScore // "N/A" | tostring) + 
+        (.title.english // .title.romaji // .title.native) + 
+        " | ⭐ " + (.averageScore // "N/A" | tostring) + 
         " | " + (.format // "TV") + 
         " | " + (.episodes // "?" | tostring) + " eps" + 
-        " | " + (.status // "Unknown")' 2>/dev/null)
+        " | " + (.status // "Unknown") + 
+        (.nextAiringEpisode | if . then " | Next: Ep " + (.episode | tostring) + " in " + ((.timeUntilAiring/ 3600) | floor | tostring) + "h" else "" end)' 2>/dev/null)
     
     if [[ -z "${anime_list}" ]]; then
         echo -e "${RED}No results found${NC}"
         return 1
     fi
     
-    # Create a temporary file for the preview function
-    local preview_script="${CACHE_DIR}/preview.sh"
-    cat > "${preview_script}" << 'EOF'
+# Create a temporary file for the preview function
+local preview_script="${CACHE_DIR}/preview.sh"
+cat > "${preview_script}" << 'EOF'
 #!/usr/bin/env bash
 selected_line="$1"
 
-# Extract ID from format "[123] DISPLAY: ... | SEARCH: ... | ..."
+# Function to format time until next episode
+format_time_until() {
+    local seconds="$1"
+    if [[ -z "$seconds" || "$seconds" -le 0 ]]; then
+        echo "Unknown"
+        return
+    fi
+    local days=$((seconds / 86400))
+    local hours=$(( (seconds % 86400) / 3600 ))
+    local minutes=$(( (seconds % 3600) / 60 ))
+    
+    if [[ $days -gt 0 ]]; then
+        echo "${days}d ${hours}h"
+    elif [[ $hours -gt 0 ]]; then
+        echo "${hours}h ${minutes}m"
+    else
+        echo "${minutes}m"
+    fi
+}
+
+# Function to format airing date
+format_airing_date() {
+    local timestamp="$1"
+    if [[ -z "$timestamp" ]]; then
+        echo "Unknown"
+        return
+    fi
+    
+    # Try different date commands for compatibility
+    if date --version 2>/dev/null | grep -q GNU; then
+        date -d "@${timestamp}" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "Unknown"
+    elif date -r "$timestamp" "+%Y-%m-%d %H:%M" 2>/dev/null; then
+        date -r "$timestamp" "+%Y-%m-%d %H:%M" 2>/dev/null
+    else
+        echo "Unknown date"
+    fi
+}
+
+# Extract ID from format
+id=""
 if [[ "$selected_line" =~ \[([0-9]+)\] ]]; then
     id="${BASH_REMATCH[1]}"
-    
-    # Extract display title (for preview)
-    display_title=$(echo "$selected_line" | grep -o "DISPLAY: [^|]*" | sed 's/DISPLAY: //')
-    
-    # Fetch anime details from AniList
+else
+    # Try alternative extraction method
+    id=$(echo "$selected_line" | grep -o '\[[0-9]*\]' | head -1 | tr -d '[]')
+fi
+
+if [[ -n "$id" ]]; then
+    # Fetch anime details from AniList with correct field names
     response=$(curl -s -X POST "https://graphql.anilist.co" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json" \
         -d "{
-            \"query\": \"query { Media(id: $id) { title { romaji english native } description episodes duration status season startDate { year } averageScore genres } }\"
+            \"query\": \"query { Media(id: $id) { id title { romaji english native } description episodes duration status season startDate { year } averageScore genres nextAiringEpisode { airingAt timeUntilAiring episode } } }\"
         }")
     
     # Check if response contains data
@@ -373,6 +354,11 @@ if [[ "$selected_line" =~ \[([0-9]+)\] ]]; then
         score=$(echo "$response" | jq -r '.data.Media.averageScore // "N/A"')
         genres=$(echo "$response" | jq -r '.data.Media.genres // [] | join(", ")')
         
+        # Extract next airing info - using correct field names
+        next_episode=$(echo "$response" | jq -r '.data.Media.nextAiringEpisode.episode // ""')
+        next_airing_at=$(echo "$response" | jq -r '.data.Media.nextAiringEpisode.airingAt // ""')
+        next_time_until=$(echo "$response" | jq -r '.data.Media.nextAiringEpisode.timeUntilAiring // ""')
+        
         # Clean description
         description=$(echo "$response" | jq -r '.data.Media.description // "No description available"' | 
             sed -E 's/<[^>]*>//g' |
@@ -380,14 +366,18 @@ if [[ "$selected_line" =~ \[([0-9]+)\] ]]; then
             sed -E 's/&[a-zA-Z]+;//g' |
             tr '\n' ' ' |
             sed -E 's/\s+/ /g' |
-            sed -E 's/^[[:space:]]+|[[:space:]]+$//g' |
-            cut -c1-500)
+            sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        
+        # Truncate description if too long
+        if [[ ${#description} -gt 500 ]]; then
+            description="${description:0:500}..."
+        fi
         
         # Calculate box width
         term_width=$(tput cols 2>/dev/null || echo 80)
         box_width=$((term_width - 10))
-        [[ $box_width -lt 50 ]] && box_width=50
-        [[ $box_width -gt 100 ]] && box_width=100
+        [[ $box_width -lt 60 ]] && box_width=60
+        [[ $box_width -gt 120 ]] && box_width=120
         
         hr=$(printf '%*s' "$box_width" | tr ' ' '─')
         
@@ -401,6 +391,30 @@ if [[ "$selected_line" =~ \[([0-9]+)\] ]]; then
         printf "│ Season: %-*s \n" $((box_width-10)) "$season $year"
         printf "│ Score: ⭐ %-*s \n" $((box_width-10)) "$score"
         printf "│ Genres: %-*s \n" $((box_width-10)) "${genres:0:$((box_width-10))}"
+        
+        # Add next airing information if available
+        if [[ -n "${next_episode}" ]] && [[ "${next_episode}" != "null" ]] && [[ "${status}" == "RELEASING" ]]; then
+            echo "├${hr}┤"
+            printf "│ \033[32mNext Episode:\033[0m %-*s \n" $((box_width-15)) "Episode ${next_episode}"
+            if [[ -n "${next_time_until}" ]] && [[ "${next_time_until}" != "null" ]]; then
+                time_formatted=$(format_time_until "${next_time_until}")
+                printf "│ \033[33mAiring in:\033[0m %-*s \n" $((box_width-13)) "${time_formatted}"
+            fi
+            if [[ -n "${next_airing_at}" ]] && [[ "${next_airing_at}" != "null" ]]; then
+                airing_date=$(format_airing_date "${next_airing_at}")
+                printf "│ \033[36mAiring at:\033[0m %-*s \n" $((box_width-13)) "${airing_date}"
+            fi
+        elif [[ "${status}" == "NOT_YET_RELEASED" ]]; then
+            echo "├${hr}┤"
+            printf "│ \033[33mStatus: Not yet released\033[0m %-*s \n" $((box_width-25)) ""
+        elif [[ "${status}" == "FINISHED" ]]; then
+            echo "├${hr}┤"
+            printf "│ \033[34mStatus: Completed\033[0m %-*s \n" $((box_width-20)) ""
+        elif [[ "${status}" == "CANCELLED" ]]; then
+            echo "├${hr}┤"
+            printf "│ \033[31mStatus: Cancelled\033[0m %-*s \n" $((box_width-20)) ""
+        fi
+        
         echo "├${hr}┤"
         echo "│ Description:"
         echo "$description" | fold -w $((box_width-4)) -s | while IFS= read -r line; do
@@ -408,42 +422,68 @@ if [[ "$selected_line" =~ \[([0-9]+)\] ]]; then
         done
         echo "└${hr}┘"
     else
-        echo "Could not fetch details for ID: $id"
+        # Check if there's an error message
+        error_msg=$(echo "$response" | jq -r '.errors[0].message // "Unknown error"')
+        
+        # Calculate box width for error message
+        term_width=$(tput cols 2>/dev/null || echo 80)
+        box_width=$((term_width - 10))
+        [[ $box_width -lt 60 ]] && box_width=60
+        
+        hr=$(printf '%*s' "$box_width" | tr ' ' '─')
+        
+        echo "┌${hr}┐"
+        echo "│ Error fetching details"
+        echo "├${hr}┤"
+        echo "│ $error_msg"
+        echo "└${hr}┘"
     fi
 else
-    echo "Select an anime to see details"
+    echo "┌────────────────────────────────────┐"
+    echo "│ Select an anime to see details     │"
+    echo "└────────────────────────────────────┘"
 fi
 EOF
-    chmod +x "${preview_script}"
+chmod +x "${preview_script}"
     
     # Use fzf to select anime with preview
     # Extract only the display part for fzf
-    local display_list=$(echo "$anime_list" | sed -E 's/ \| SEARCH: [^|]* \|/ \|/g')
+   local display_list=$(echo "$anime_list" | sed -E 's/ \| SEARCH: [^|]* \|/ \|/g')
+
+local selected=$(echo "${display_list}" | fzf \
+    --prompt="Select anime: " \
+    --height=30 \
+    --border \
+    --cycle \
+    --preview="${preview_script} {}")
+
+if [[ -n "${selected}" ]]; then
+    # Extract ID
+    local anime_id=$(echo "${selected}" | grep -o "\[[0-9]*\]" | head -1 | tr -d '[]')
     
-    local selected=$(echo "${display_list}" | fzf \
-        --prompt="Select anime: " \
-        --height=30 \
-        --border \
-        --cycle \
-        --preview="${preview_script} {}")
+    # Get the full line from original anime_list
+    local full_line=$(echo "$anime_list" | grep "\[${anime_id}\]")
     
-    if [[ -n "${selected}" ]]; then
-        # Extract ID
-        local anime_id=$(echo "${selected}" | grep -o "\[[0-9]*\]" | head -1 | tr -d '[]')
-        
-        # Get the full line from original anime_list to extract search title
-        local full_line=$(echo "$anime_list" | grep "\[${anime_id}\]")
-        
-        # Extract search title (Romaji) for ani-cli
-        local search_title=$(echo "$full_line" | grep -o "SEARCH: [^|]*" | sed 's/SEARCH: //')
-        
-        # Extract display title (English) for showing to user
-        local display_title=$(echo "$selected" | sed -E 's/^\[[0-9]+\] DISPLAY: //;s/ \|.*//')
-        
-        echo -e "\n${CYAN}════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${GREEN}Selected: ${display_title}${NC}"
-        echo -e "${YELLOW}Searching with: ${search_title}${NC}"
-        echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
+    # Extract search title - improved regex
+    local search_title=$(echo "$full_line" | sed -n 's/.*SEARCH: \([^|]*\) |.*/\1/p')
+    
+    # Extract display title - improved
+    local display_title=$(echo "$selected" | sed -n 's/^\[[0-9]*\] \([^|]*\) |.*/\1/p')
+    
+    # If extraction failed, try alternative method
+    if [[ -z "${display_title}" ]]; then
+        display_title=$(echo "$selected" | sed -E 's/^\[[0-9]+\] //;s/ \|.*//')
+    fi
+    
+    if [[ -z "${search_title}" ]]; then
+        search_title="$display_title"
+        echo -e "${YELLOW}Warning: Could not extract search title, using display title${NC}"
+    fi
+    
+    echo -e "\n${CYAN}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Selected: ${display_title}${NC}"
+    echo -e "${YELLOW}Searching with: ${search_title}${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
         
         # Ask if user wants to watch
         if fzf_confirm "Watch this anime?"; then
@@ -474,7 +514,7 @@ EOF
             esac
             
             # Execute with fallback using search_title (Romaji)
-            execute_with_fallback "${search_title}" "${preferred_lang}" "${QUALITY}" "${PLAYER}" "${SKIP_INTRO}"
+            execute_with_fallback "${search_title}" "${preferred_lang}" "${QUALITY}" "${PLAYER}" "${SKIP_INTRO}" "${ENGLISH_TITLE}"
         fi
     fi
 }
@@ -498,6 +538,7 @@ execute_with_fallback() {
         [[ "${player}" == "vlc" ]] && cmd+=" -v"
         cmd+=" --dub"
         [[ "${skip_intro}" == true ]] && cmd+=" --skip --skip-title \"${search_term}\""
+        [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en" 
         cmd+=" ${search_term}"
         
         echo -e "\n${GREEN}Launching:${NC} ${cmd}"
@@ -526,6 +567,7 @@ execute_with_fallback() {
                 [[ "${quality}" != "1080p" ]] && cmd+=" -q ${quality}"
                 [[ "${player}" == "vlc" ]] && cmd+=" -v"
                 [[ "${skip_intro}" == true ]] && cmd+=" --skip --skip-title \"${search_term}\""
+                [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
                 cmd+=" ${search_term}"
                 
                 echo -e "\n${GREEN}Launching:${NC} ${cmd}"
@@ -540,6 +582,7 @@ execute_with_fallback() {
         [[ "${quality}" != "1080p" ]] && cmd+=" -q ${quality}"
         [[ "${player}" == "vlc" ]] && cmd+=" -v"
         [[ "${skip_intro}" == true ]] && cmd+=" --skip --skip-title \"${search_term}\""
+        [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
         cmd+=" ${search_term}"
         
         echo -e "\n${GREEN}Launching:${NC} ${cmd}"
@@ -612,7 +655,7 @@ search_anime() {
     if [[ -z "${search_term}" ]]; then
         echo -e "\n${GREEN}Enter anime name:${NC}"
         echo -e "${YELLOW}Note: Single quotes (') are not supported. Please use Romanji titles without apostrophes.${NC}"
-        echo -e "${YELLOW}Example: Use just 'Paradise' search or use Romaji Title 'Jigokuraku' (Recommended) instead of \"Hell's Paradise\"${NC}"
+        echo -e "${YELLOW}Example: Use just 'Hell Paradise' search or use Romaji Title 'Jigokuraku' (Recommended) instead of \"Hell's Paradise\"${NC}"
         read -r search_term
     fi
     
@@ -632,7 +675,7 @@ search_anime() {
         echo -e "${YELLOW}Please use Romanji titles without apostrophes.${NC}"
         echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"
         echo -e "\n${GREEN}Suggested alternatives:${NC}"
-        echo -e "  • ${WHITE}Hell's Paradise${NC} → ${GREEN}Paradise${NC} or ${GREEN}Jigokuraku${NC}"
+        echo -e "  • ${WHITE}Hell's Paradise${NC} → ${GREEN}Hell Paradise${NC} or ${GREEN}Jigokuraku${NC}"
         echo -e "  • ${WHITE}Hunter x Hunter${NC} → ${GREEN}Hunter x Hunter${NC} (already good)"
         echo -e "  • ${WHITE}Re:Zero${NC} → ${GREEN}Re:Zero${NC} (already good)"
         echo -e "  • ${WHITE}That Time I Got Reincarnated as a Slime${NC} → ${GREEN}That Time I Got Reincarnated as a Slime${NC} (already good)"
@@ -775,9 +818,9 @@ show_main_menu() {
         "🔍 Search and Watch Anime"
         "🎯 Continue Watching"
         "📺 Discover Anime (AniList)"
-        #"💾 History"
         "📥 Download Anime"
         "⚙️  Settings"
+        "💾 History"
         "📚 My Library/Watchlist"
         "🔄 Check for Updates"
         "❓ Help"
@@ -790,9 +833,9 @@ show_main_menu() {
         *"Search"*) search_anime ;;
         *"Continue"*) continue_watching ;;
         *"Discover"*) discover_anime ;;
-        #*"History"*) print_history ;;
         *"Download"*) download_anime ;;
         *"Settings"*) show_settings_menu ;;
+        *"History"*) print_history ;;
         *"Library"*) show_library ;;
         *"Updates"*) check_updates ;;
         *"Help"*) show_help ;;
@@ -849,6 +892,7 @@ continue_watching() {
     [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
     [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
     [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip"
+    [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
     
     echo -e "\n${GREEN}Launching:${NC} ${cmd}"
     log "INFO" "Continue watching with: ${cmd}"
@@ -868,6 +912,7 @@ continue_watching() {
             [[ "${QUALITY}" != "1080p" ]] && sub_cmd+=" -q ${QUALITY}"
             [[ "${PLAYER}" == "vlc" ]] && sub_cmd+=" -v"
             [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip"
+            [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
             
             echo -e "\n${GREEN}Launching SUBBED version...${NC}"
             eval "${sub_cmd}"
@@ -886,16 +931,18 @@ discover_anime() {
         "🔥 Trending Now"
         "⭐ Most Popular"
         "🏆 Top Rated"
+        "🌸 Current Season"
         "🚀 Upcoming"
         "🔙 Back to Main Menu"
     )
     
-    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Discover: " --height=10 --border)
+    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Discover: " --height=10 --border --cycle)
     
     case "${choice}" in
         *"Trending"*) show_anilist_results "trending" ;;
         *"Popular"*) show_anilist_results "popular" ;;
         *"Top Rated"*) show_anilist_results "top_rated" ;;
+        *"Current Season"*) show_anilist_results "seasonal" ;;
         *"Upcoming"*) show_anilist_results "upcoming" ;;
         *) show_main_menu ;;
     esac
@@ -946,7 +993,6 @@ print_history() {
     
     # Add options
     local options=(
-        #"🔍 Search History"
         "📊 View Statistics"
         "🗑️  Clear History"
         "🔙 Back to Main Menu"
@@ -966,14 +1012,11 @@ print_history() {
                 if [[ {} =~ ^\[Ep\ ([0-9]+)\]\ (.*)$ ]]; then
                     ep="${BASH_REMATCH[1]}"
                     title="${BASH_REMATCH[2]}"
-                    t_ep="${BASH_REMATCH[3]}"
-                    echo "╔════════════════════════════════════════════╗"
-                    echo "║              Anime Details                 ║"
-                    echo "╠════════════════════════════════════════════╣"
-                    echo "║ Title: $title"
-                    echo "║ Episodes: $t_ep"
-                    echo "║ Episode(s) Watched: $ep"
-                    echo "╚════════════════════════════════════════════╝"
+                    total_ep="${BASH_REMATCH[3]}"
+                    echo "Anime Details"           
+                    echo ""
+                    echo "Title: $title"
+                    echo "Episode(s) Watched: $ep"
                 else
                     echo "Select an option or search for anime"
                 fi
@@ -984,125 +1027,7 @@ print_history() {
     # Handle selection
     if [[ -n "${selected}" ]]; then
         case "${selected}" in
-            "🔍 Search History")
-                # Interactive search
-                echo -e "\n${GREEN}Enter search term:${NC}"
-                read -r search_term
-                if [[ -n "${search_term}" ]]; then
-                    # Search through history
-                    local search_results=$(grep -i "${search_term}" "${history_file}" | while IFS=$'\t' read -r ep id title; do
-                        clean_title=$(echo "$title" | sed -E 's/\s*\([0-9]+\s*episodes\)\s*$//')
-                        echo "[Ep ${ep}] ${clean_title}"
-                    done)
-                    
-                    if [[ -n "${search_results}" ]]; then
-                        echo -e "\n${GREEN}Search results for '${search_term}':${NC}"
-                        echo "${search_results}" | nl -w3 -s'. ' | while IFS= read -r line; do
-                            echo -e "${GREEN}${line}${NC}"
-                        done
-                        
-                        # Allow selection from search results
-                        local search_choice=$(echo "${search_results}" | fzf --prompt="Select from results: " --height=15 --border)
-                        if [[ -n "${search_choice}" ]]; then
-                            # Extract title and episode from selection
-                            if [[ "${search_choice}" =~ ^\[Ep\ ([0-9]+)\]\ (.*)$ ]]; then
-                                local ep_num="${BASH_REMATCH[1]}"
-                                local anime_title="${BASH_REMATCH[2]}"
-                                
-                                echo -e "\n${GREEN}Selected: ${anime_title} (Episode ${ep_num})${NC}"
-                                
-                                # Ask if user wants to watch
-                                if fzf_confirm "Watch this anime?"; then
-                                    # Language selection
-                                    local lang_options=(
-                                        "Use configured language (${LANGUAGE})"
-                                        "SUB"
-                                        "DUB"
-                                    )
-                                    
-                                    local lang_choice=$(printf '%s\n' "${lang_options[@]}" | fzf --prompt="Select language: " --height=10)
-                                    
-                                    local preferred_lang="sub"
-                                    local dub_flag=""
-                                    case "${lang_choice}" in
-                                        *"DUB"*)
-                                            preferred_lang="dub"
-                                            dub_flag="--dub"
-                                            echo -e "${GREEN}Watching DUBBED version${NC}"
-                                            ;;
-                                        *"SUB"*)
-                                            preferred_lang="sub"
-                                            dub_flag=""
-                                            echo -e "${GREEN}Watching SUBBED version${NC}"
-                                            ;;
-                                        *)
-                                            if [[ "${LANGUAGE}" == "dub" ]]; then
-                                                preferred_lang="dub"
-                                                dub_flag="--dub"
-                                            else
-                                                dub_flag=""
-                                            fi
-                                            ;;
-                                    esac
-                                    
-                                    # Ask how to watch
-                                    local watch_options=(
-                                        "▶️  Watch episode ${ep_num}"
-                                        "📋 Select different episode"
-                                        "🔄 Start from beginning"
-                                        "❌ Cancel"
-                                    )
-                                    
-                                    local watch_choice=$(printf '%s\n' "${watch_options[@]}" | fzf --prompt="How to watch? " --height=10 --border)
-                                    
-                                    case "${watch_choice}" in
-                                        *"Watch episode ${ep_num}"*)
-                                            # Use -e flag with episode number
-                                            local cmd="ani-cli -e ${ep_num}"
-                                            [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
-                                            [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
-                                            [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
-                                            [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
-                                            cmd+=" ${anime_title}"
-                                            
-                                            echo -e "\n${GREEN}Launching:${NC} ${cmd}"
-                                            eval "${cmd}"
-                                            ;;
-                                        *"different episode"*)
-                                            echo -e "\n${GREEN}Enter episode number:${NC}"
-                                            read -r ep_input
-                                            if [[ -n "${ep_input}" ]]; then
-                                                local cmd="ani-cli -e ${ep_input}"
-                                                [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
-                                                [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
-                                                [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
-                                                [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
-                                                cmd+=" ${anime_title}"
-                                                
-                                                echo -e "\n${GREEN}Launching:${NC} ${cmd}"
-                                                eval "${cmd}"
-                                            fi
-                                            ;;
-                                        *"beginning"*)
-                                            local cmd="ani-cli"
-                                            [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
-                                            [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
-                                            [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
-                                            [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
-                                            cmd+=" ${anime_title}"
-                                            
-                                            echo -e "\n${GREEN}Launching:${NC} ${cmd}"
-                                            eval "${cmd}"
-                                            ;;
-                                    esac
-                                fi
-                            fi
-                        fi
-                    else
-                        echo -e "${YELLOW}No matches found for '${search_term}'${NC}"
-                    fi
-                fi
-                ;;
+           
                 
             "📊 View Statistics")
                 # Show history statistics
@@ -1143,7 +1068,7 @@ print_history() {
                 if [[ "${selected}" =~ ^\[Ep\ ([0-9]+)\]\ (.*)$ ]]; then
                     local watched_ep="${BASH_REMATCH[1]}"
                     local ep_num="$((BASH_REMATCH[1]+1))"
-                    local anime_title="${BASH_REMATCH[2]}"
+                    local anime_title=$(echo "${BASH_REMATCH[2]}" | sed -E 's/\s*\([0-9]+\s*episodes\)\s*$//')
                     
                     echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
                     echo -e "${GREEN}Selected: ${anime_title}${NC}"
@@ -1200,6 +1125,7 @@ print_history() {
                             [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
                             [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
                             [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
+                            [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
                             cmd+=" ${anime_title}"
                             
                             echo -e "\n${GREEN}Launching:${NC} ${cmd}"
@@ -1215,6 +1141,7 @@ print_history() {
                                 [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
                                 [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
                                 [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
+                                [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
                                 cmd+=" ${anime_title}"
                                 
                                 echo -e "\n${GREEN}Launching:${NC} ${cmd}"
@@ -1227,6 +1154,7 @@ print_history() {
                             [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
                             [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
                             [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
+                            [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
                             cmd+=" ${anime_title}"
                             
                             echo -e "\n${GREEN}Launching:${NC} ${cmd}"
@@ -1253,27 +1181,27 @@ show_settings_menu() {
             "🎬 Quality (current: ${QUALITY})"
             "🎮 Player (current: ${PLAYER})"
             "🔤 Default Language (current: ${LANGUAGE})"
-            "🔄 Auto Fallback to SUB (current: ${AUTO_FALLBACK})"
+            "🔄 Auto Fallback to SUB when DUB is selected (current: ${AUTO_FALLBACK})"
             "📁 Download Directory (current: ${DOWNLOAD_DIR})"
             "📜 History File (current: ${HISTORY_FILE})"
-            "🔄 Auto Update (current: ${AUTO_UPDATE})"
             "⏭️  Skip Intro (current: ${SKIP_INTRO})"
+            "🇺🇸  English Anime Title (current: ${ENGLISH_TITLE})"
             "🎨 Header Art (select ASCII art)"
             "🗑️  Clear Cache/History"
             "🔙 Back to Main Menu"
         )
         
-        local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Settings: " --height=18 --border)
+        local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Settings: " --height=18 --border --cycle)
         
         case "${choice}" in
             *"Quality"*) change_quality ;;
             *"Player"*) change_player ;;
             *"Language"*) change_language ;;
-            *"Auto Fallback"*) toggle_fallback ;;
+            *"Auto Fallback to SUB when DUB is selected"*) toggle_setting "AUTO_FALLBACK" ;;
             *"Download Directory"*) change_download_dir ;;
             *"History File"*) change_history_file ;;
-            *"Auto Update"*) toggle_setting "AUTO_UPDATE" ;;
             *"Skip Intro"*) toggle_setting "SKIP_INTRO" ;;
+            *"English Anime Title"*) toggle_setting "ENGLISH_TITLE" ;;
             *"Header Art"*) select_header_art ;;
             *"Clear Cache"*) clear_cache ;;
             *"Back"*) break ;;
@@ -1283,27 +1211,11 @@ show_settings_menu() {
     show_main_menu
 }
 
-# Toggle auto fallback
-toggle_fallback() {
-    local options=("✅ Enable" "❌ Disable")
-    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Auto fallback to SUB when DUB fails: " --height=5 --border)
-    
-    if [[ "${choice}" == "✅ Enable" ]]; then
-        AUTO_FALLBACK=true
-        update_config "AUTO_FALLBACK" "true"
-        echo -e "${GREEN}Auto fallback enabled${NC}"
-    else
-        AUTO_FALLBACK=false
-        update_config "AUTO_FALLBACK" "false"
-        echo -e "${YELLOW}Auto fallback disabled${NC}"
-    fi
-    sleep 2
-}
 
 # Change quality setting
 change_quality() {
     local options=("360p" "480p" "720p" "1080p")
-    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Select quality: " --height=10)
+    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Select quality: " --height=10 --cycle)
     
     if [[ -n "${choice}" ]]; then
         QUALITY="${choice}"
@@ -1316,7 +1228,7 @@ change_quality() {
 # Change player setting
 change_player() {
     local options=("mpv" "vlc")
-    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Select player: " --height=5)
+    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Select player: " --height=5 --cycle)
     
     if [[ -n "${choice}" ]]; then
         PLAYER="${choice}"
@@ -1329,7 +1241,7 @@ change_player() {
 # Change language setting
 change_language() {
     local options=("sub" "dub")
-    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Select default language: " --height=5)
+    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Select default language: " --height=5 --cycle)
     
     if [[ -n "${choice}" ]]; then
         LANGUAGE="${choice}"
@@ -1397,7 +1309,7 @@ toggle_setting() {
     local current_value="${!setting}"
     
     local options=("✅ Enable" "❌ Disable")
-    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Toggle ${setting}: " --height=5 --border)
+    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Toggle ${setting}: " --height=5 --border --cycle)
     
     if [[ "${choice}" == "✅ Enable" ]]; then
         eval "${setting}=true"
@@ -1434,7 +1346,7 @@ clear_cache() {
         "Cancel"
     )
     
-    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Clear options: " --height=12)
+    local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Clear options: " --height=12 --cycle)
     
     case "${choice}" in
         *"searches only"*)
@@ -1485,7 +1397,7 @@ select_header_art() {
         "🎨 Custom RGB"
     )
     
-    local color_choice=$(printf '%s\n' "${color_options[@]}" | fzf --prompt="Select color: " --height=10 --border)
+    local color_choice=$(printf '%s\n' "${color_options[@]}" | fzf --prompt="Select color: " --height=10 --border --cycle)
     
     local selected_color=""
     case "${color_choice}" in
@@ -1703,7 +1615,7 @@ show_library() {
                 if [[ -n "${new_anime}" ]]; then
                     
                     local lang_options=("SUB" "DUB")
-                    local lang_choice=$(printf '%s\n' "${lang_options[@]}" | fzf --prompt="Language: " --height=5)
+                    local lang_choice=$(printf '%s\n' "${lang_options[@]}" | fzf --prompt="Language: " --height=5 --cycle)
                     
                     if [[ "${lang_choice}" == "DUB" ]]; then
                         echo "${new_anime} (DUB)" >> "${watchlist_file}"
@@ -1738,19 +1650,330 @@ show_library() {
     show_main_menu
 }
 
-# Check for updates
+# Check for updates for both ani-cli and wrapper
 check_updates() {
     show_header
-    echo -e "${GREEN}Checking for updates...${NC}\n"
     
-    ani-cli -U
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Update Center${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
     
-    echo -e "\n${GREEN}Wrapper version: 2.3.0 (with AniList Discovery)${NC}"
+    # Options for what to update
+    local update_options=(
+        "1. 🔄 Update ani-cli only"
+        "2. 🔄 Update ani-cli-wrapper only"
+        "3. 🔄 Update both"
+        "4. 📊 Check versions only"
+        "5. 🔙 Back to Main Menu"
+    )
+    
+    local update_choice=$(printf '%s\n' "${update_options[@]}" | fzf --prompt="Select update option: " --height=12 --border --cycle)
+    
+    case "${update_choice}" in
+        *"ani-cli only"*|*"1."*)
+            update_ani_cli
+            ;;
+        *"wrapper only"*|*"2."*)
+            update_ani_cli_wrapper
+            ;;
+        *"both"*|*"3."*)
+            update_ani_cli
+            update_ani_cli_wrapper
+            ;;
+        *"Check versions"*|*"4."*)
+            check_versions
+            ;;
+        *)
+            show_main_menu
+            return
+            ;;
+    esac
+    
     echo -e "\n${GREEN}Press Enter to continue${NC}"
     read -r
     show_main_menu
 }
 
+# Check versions of both ani-cli and wrapper
+check_versions() {
+    echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Version Information${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
+    
+    # ani-cli version
+    echo -e "${GREEN}ani-cli:${NC}"
+    if command -V ani-cli &> /dev/null; then
+        ani-cli -V 2>/dev/null || echo "  Version: Unknown"
+        
+        # Get install location
+        local ani_path=$(which ani-cli)
+        echo -e "  Location: ${ani_path}"
+        
+        # Check if update available
+        local latest_ani=$(curl -s "https://api.github.com/repos/pystardust/ani-cli/releases/latest" 2>/dev/null | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
+        if [[ -n "${latest_ani}" ]]; then
+            echo -e "  Latest: ${latest_ani}"
+        fi
+    else
+        echo -e "  ${RED}Not installed${NC}"
+    fi
+    
+    echo ""
+    
+    # wrapper version
+    echo -e "${GREEN}ani-cli-wrapper:${NC}"
+    echo -e "  Version: ${CURRENT_VERSION}"
+    echo -e "  Location: $(realpath "$0")"
+    
+    # Check wrapper latest
+    local REPO_OWNER="scarletdragon9632"
+    local REPO_NAME="ani-cli-wrapper"
+    local latest_wrapper=$(curl -s "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest" 2>/dev/null | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
+    if [[ -n "${latest_wrapper}" ]]; then
+        echo -e "  Latest: ${latest_wrapper}"
+    fi
+    
+    echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
+    
+}
+
+# Update ani-cli with confirmation
+update_ani_cli() {
+    echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}ani-cli Update${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
+    
+    # Show current version
+    echo -e "${GREEN}Current version:${NC}"
+    ani-cli -V 2>/dev/null || echo "Unknown"
+    
+    # Check if update available (without actually updating)
+    echo -e "\n${YELLOW}Checking for updates...${NC}"
+    local check_output=$(ani-cli -U 2>&1)
+    
+    if echo "${check_output}" | grep -q "Script is up to date :)"; then
+        echo -e "\n${GREEN}✓ ani-cli is already up to date!${NC}"
+        sleep 2
+        return
+    elif echo "${check_output}" | grep -q "Updated"; then
+        echo -e "\n${GREEN}✓ ani-cli has been updated!${NC}"
+    else
+        # Ask if user wants to update
+        echo -e "\n${YELLOW}An update is available.${NC}"
+        if fzf_confirm "Update now?"; then
+            ani-cli -U
+            echo -e "\n${GREEN}✓ Update complete!${NC}"
+        else
+            echo -e "\n${YELLOW}Update skipped${NC}"
+        fi
+    fi
+    
+    # Show final version
+    echo -e "\n${GREEN}Current version:${NC}"
+    ani-cli -V   2>/dev/null
+    
+    sleep 2
+}
+
+# Update ani-cli-wrapper
+update_ani_cli_wrapper() {
+    show_header
+    
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Checking for Updates${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
+    
+    # GitHub repository information
+    local REPO_OWNER="scarletdragon9632"
+    local REPO_NAME="ani-cli-wrapper"
+    local CURRENT_VERSION=${CURRENT_VERSION}
+    local SCRIPT_PATH="$(realpath "$0")"
+    local SCRIPT_NAME="$(basename "$0")"
+    
+    echo -e "${GREEN}Current version: ${CURRENT_VERSION}${NC}"
+    echo -e "${GREEN}Script location: ${SCRIPT_PATH}${NC}"
+    
+    # Check if running in debug mode (don't actually update)
+    local DEBUG_MODE="${DEBUG:-false}"
+    
+    # Create temp directory for update
+    local temp_dir=$(mktemp -d)
+    cd "${temp_dir}" || return 1
+    
+    echo -e "\n${YELLOW}Fetching latest version from GitHub...${NC}"
+    
+    # Fetch latest release info from GitHub API
+    local api_response=$(curl -s "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest" 2>/dev/null)
+    
+    # Check if API request succeeded
+    if [[ -z "${api_response}" ]] || echo "${api_response}" | grep -q "API rate limit exceeded"; then
+        echo -e "${RED}Failed to check for updates. GitHub API rate limit may be exceeded.${NC}"
+        echo -e "${YELLOW}Try again later or check manually at:${NC}"
+        echo -e "https://github.com/${REPO_OWNER}/${REPO_NAME}/releases"
+        sleep 3
+        cd - > /dev/null
+        rm -rf "${temp_dir}"
+        show_main_menu
+        return
+    fi
+    
+    # Extract latest version
+    local latest_version=$(echo "${api_response}" | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
+    local download_url=$(echo "${api_response}" | grep -o '"browser_download_url": "[^"]*"' | cut -d'"' -f4)
+    
+    # If no release found, try to get from main branch
+    if [[ -z "${latest_version}" ]]; then
+        echo -e "${YELLOW}No release found, checking main branch...${NC}"
+        latest_version=$(curl -s "https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/version.txt" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        download_url="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${SCRIPT_NAME}"
+    fi
+    
+    # Compare versions
+    if [[ "${latest_version}" != "${CURRENT_VERSION}" ]] && [[ "${latest_version}" != "unknown" ]]; then
+        echo -e "\n${GREEN}New version available: ${latest_version}${NC}"
+        echo -e "${YELLOW}Current version: ${CURRENT_VERSION}${NC}"
+        
+        echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}Changelog:${NC}"
+        echo -e "${CYAN}════════════════════════════════════════════${NC}"
+        
+        # Fetch and display changelog
+        local changelog=$(curl -s "https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/CHANGELOG.md" 2>/dev/null | head -20)
+        if [[ -n "${changelog}" ]]; then
+            echo -e "${changelog}"
+        else
+            echo -e "No changelog available"
+        fi
+        
+        echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
+        
+        # Ask to update
+        local update_options=(
+            "✅ Update now (recommended)"
+            "📝 View full changelog"
+            "❌ Skip this version"
+            "🔔 Remind me later"
+        )
+        
+        local update_choice=$(printf '%s\n' "${update_options[@]}" | fzf --prompt="What would you like to do? " --height=10 --border)
+        
+        case "${update_choice}" in
+            *"Update now"*)
+                update_script "${download_url}" "${SCRIPT_PATH}" "${latest_version}"
+                ;;
+            *"View full changelog"*)
+                curl -s "https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/CHANGELOG.md" | less
+                check_updates  # Recursive to show update prompt again
+                ;;
+            *"Skip"*)
+                echo -e "${YELLOW}Version ${latest_version} skipped${NC}"
+                # Save skipped version to config
+                update_config "SKIPPED_VERSION" "${latest_version}"
+                sleep 2
+                ;;
+            *"Remind"*)
+                echo -e "${GREEN}Will remind you next time${NC}"
+                sleep 2
+                ;;
+        esac
+    elif [[ "${latest_version}" == "${CURRENT_VERSION}" ]]; then
+        echo -e "\n${GREEN}✓ You're running the latest version (${CURRENT_VERSION})${NC}"
+        
+        # Offer to force reinstall
+        if fzf_confirm "Reinstall current version?"; then
+            update_script "${download_url}" "${SCRIPT_PATH}" "${CURRENT_VERSION}" "force"
+        fi
+    else
+        echo -e "\n${YELLOW}Could not determine latest version.${NC}"
+        echo -e "${GREEN}Current version: ${CURRENT_VERSION}${NC}"
+        
+        # Offer to check main branch
+        if fzf_confirm "Check main branch for updates?"; then
+            local main_version=$(curl -s "https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/version.txt" 2>/dev/null)
+            if [[ -n "${main_version}" ]]; then
+                echo -e "${GREEN}Main branch version: ${main_version}${NC}"
+                if [[ "${main_version}" != "${CURRENT_VERSION}" ]]; then
+                    if fzf_confirm "Update to main branch version?"; then
+                        update_script "https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${SCRIPT_NAME}" "${SCRIPT_PATH}" "${main_version}"
+                    fi
+                fi
+            fi
+        fi
+    fi
+    
+    # Cleanup
+    cd - > /dev/null
+    rm -rf "${temp_dir}"
+    
+    echo -e "\n${GREEN}Press Enter to continue${NC}"
+    read -r
+    show_main_menu
+}
+
+# Update the script
+update_script() {
+    local download_url="$1"
+    local script_path="$2"
+    local new_version="$3"
+    local force="${4:-false}"
+    
+    echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Updating ani-cli-wrapper${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
+    
+    # Create backup
+    local backup_path="${script_path}.backup.$(date +%Y%m%d_%H%M%S)"
+    echo -e "${YELLOW}Creating backup: ${backup_path}${NC}"
+    cp "${script_path}" "${backup_path}"
+    
+    # Download new version
+    echo -e "${YELLOW}Downloading new version...${NC}"
+    local temp_script="${script_path}.new"
+    
+    if curl -s -L "${download_url}" -o "${temp_script}"; then
+        # Verify download
+        if [[ -s "${temp_script}" ]]; then
+            # Check if it's a valid bash script
+            if head -1 "${temp_script}" | grep -q "^#!/usr/bin/env bash\|^#!/bin/bash"; then
+                # Make executable
+                chmod +x "${temp_script}"
+                
+                # Show diff (optional)
+                echo -e "\n${YELLOW}Changes in new version:${NC}"
+                diff -u "${script_path}" "${temp_script}" | head -20 || true
+                
+                if [[ "${force}" == "force" ]] || fzf_confirm "Apply update and restart?"; then
+                    # Replace current script
+                    mv "${temp_script}" "${script_path}"
+                    
+                    # Update version in config
+                    update_config "VERSION" "${new_version}"
+                    
+                    echo -e "\n${GREEN}✓ Update successful!${NC}"
+                    echo -e "${YELLOW}Restarting with new version...${NC}"
+                    sleep 2
+                    
+                    # Restart script
+                    exec "${script_path}" "$@"
+                else
+                    echo -e "${YELLOW}Update cancelled${NC}"
+                    rm -f "${temp_script}"
+                fi
+            else
+                echo -e "${RED}Downloaded file is not a valid bash script${NC}"
+                rm -f "${temp_script}"
+            fi
+        else
+            echo -e "${RED}Downloaded file is empty${NC}"
+            rm -f "${temp_script}"
+        fi
+    else
+        echo -e "${RED}Failed to download update${NC}"
+    fi
+    
+    echo -e "\n${YELLOW}Backup saved at: ${backup_path}${NC}"
+    sleep 2
+}
 # Show help
 show_help() {
     show_header
@@ -1816,10 +2039,6 @@ main() {
     
     log "INFO" "Session started (v2.3.0 with AniList Discovery)"
     
-    # Auto-update if enabled
-    if [[ "${AUTO_UPDATE}" == true ]]; then
-        ani-cli -U &> /dev/null || true
-    fi
     
     show_main_menu
 }
