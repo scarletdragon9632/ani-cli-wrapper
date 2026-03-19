@@ -1,0 +1,19 @@
+--optimize=9 \
+            --colors=full \
+            --dither=bayer \
+            --dither-intensity=0.5 \
+            --color-space=rgb \
+            --scale=max \
+            "$img_temp" 2>/dev/null
+
+
+
+
+            chafa --size="${preview_width}x${preview_height}" \
+            --optimize=9 \
+            --colors=full \
+            --dither=bayer \
+            --dither-intensity=0.5 \
+            --color-space=rgb \
+            --scale=max \
+            "$img_temp" 2>/dev/null
