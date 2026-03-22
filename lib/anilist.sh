@@ -124,64 +124,6 @@ search_anilist() {
 # ADD TO LIBRARY FUNCTION
 # ==============================================
 
-# Add anime to library
-add_to_library() {
-    local anime_id="$1"
-    local anime_name="$2"
-    
-    echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
-    echo -e "${YELLOW}Add to Library: ${anime_name}${NC}"
-    echo -e "${CYAN}════════════════════════════════════════════${NC}"
-    
-    # Check if user is logged in
-    if [[ -z "${ANILIST_TOKEN:-}" ]]; then
-        echo -e "${YELLOW}You need to be logged in to AniList to add items.${NC}"
-        if fzf_confirm "Log in to AniList now?"; then
-            if [[ -f "${LIB_DIR}/anilist_user.sh" ]]; then
-                source "${LIB_DIR}/anilist_user.sh"
-                check_credentials
-            else
-                echo -e "${RED}AniList user module not found${NC}"
-                return 1
-            fi
-        else
-            return 1
-        fi
-    fi
-    
-    local status_options=(
-        "CURRENT - Currently Watching"
-        "PLANNING - Plan to Watch"
-        "COMPLETED - Finished"
-        "PAUSED - On Hold"
-    )
-    
-    local choice=$(printf '%s\n' "${status_options[@]}" | fzf --prompt="Add as: " --height=8 --border)
-    
-    if [[ -n "${choice}" ]]; then
-        local status=$(echo "${choice}" | cut -d' ' -f1)
-        local status_desc=$(echo "${choice}" | cut -d'-' -f2- | sed 's/^ //')
-        
-        echo -e "${YELLOW}Adding to ${status_desc} list...${NC}"
-        
-        local mutation='{"query":"mutation ($id: Int, $status: MediaListStatus) { SaveMediaListEntry(mediaId: $id, status: $status) { id status } }","variables":{"id":'"$anime_id"',"status":"'"$status"'"}}'
-        
-        local response=$(curl -s -X POST "https://graphql.anilist.co" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${ANILIST_TOKEN}" \
-            -d "${mutation}")
-        
-        if echo "${response}" | jq -e '.data.SaveMediaListEntry' > /dev/null 2>&1; then
-            local entry_status=$(echo "${response}" | jq -r '.data.SaveMediaListEntry.status')
-            echo -e "${GREEN}✓ Added to your ${entry_status} list successfully!${NC}"
-            rm -f "${LIBRARY_CACHE:-${CACHE_DIR}/library_cache}"* 2>/dev/null
-        else
-            echo -e "${RED}✗ Failed to add to list${NC}"
-        fi
-    fi
-    
-    sleep 1
-}
 
 # ==============================================
 # FETCH FUNCTIONS

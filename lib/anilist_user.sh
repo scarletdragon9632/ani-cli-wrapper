@@ -592,6 +592,11 @@ add_to_library() {
         
         if echo "${response}" | jq -e '.data.SaveMediaListEntry' > /dev/null 2>&1; then
             echo -e "${GREEN}✓ Added to your ${status} list${NC}"
+            if [[ "${status}" = "CURRENT" ]]; then {
+                update_anime_progress "${anime_id}" "${anime_name}"
+
+            }
+            fi
             rm -f "${LIBRARY_CACHE}".*
         else
             echo -e "${RED}✗ Failed to add to list${NC}"

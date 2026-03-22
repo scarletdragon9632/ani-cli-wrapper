@@ -20,7 +20,7 @@ SKIP_INTRO=false
 AUTO_FALLBACK=true
 HEADER_COLOR="CYAN"
 CURRENT_HEADER="default.txt"
-CURRENT_VERSION="1.6.0"
+CURRENT_VERSION="1.7.0"
 ENGLISH_TITLE=true
 
 # Export variables
@@ -37,7 +37,7 @@ setup_directories() {
     if [[ ! -f "${CONFIG_FILE}" ]]; then
         cat > "${CONFIG_FILE}" << EOF
 # ani-cli-wrapper Configuration File
-CURRENT_VERSION="1.5.0"
+CURRENT_VERSION="1.7.0"
 QUALITY="${DEFAULT_QUALITY}"
 PLAYER="${DEFAULT_PLAYER}"
 LANGUAGE="${DEFAULT_LANGUAGE}"

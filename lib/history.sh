@@ -196,8 +196,7 @@ print_history() {
                 if [[ "${selected}" =~ ^\[Ep\ ([0-9]+)\]\ (.*)$ ]]; then
                     local watched_ep="${BASH_REMATCH[1]}"
                     local ep_num="$((BASH_REMATCH[1]+1))"
-                    local anime_title=$(echo "${BASH_REMATCH[2]}" | sed -E 's/\s*\([0-9]+\s*episodes\)\s*$//')
-                    
+                    local anime_title=$(echo "${BASH_REMATCH[2]}" | sed -E 's/\s*\([^)]*\)\s*//g')
                     echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
                     echo -e "${GREEN}Selected: ${anime_title}${NC}"
                     echo -e "${YELLOW}Last watched: Episode ${watched_ep}${NC}"
