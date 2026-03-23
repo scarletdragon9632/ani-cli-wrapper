@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 # ani-cli-wrapper - Main entry point
-# Version: 2.3.0
 
 set -euo pipefail
 

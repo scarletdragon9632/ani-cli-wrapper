@@ -24,31 +24,7 @@ download_thumbnails() {
     echo "$cache_dir"
 }
 
-# Simple image preview with chafa
-image_preview_fzf() {
-    local cache_dir="$1"
-    local search_term="$2"
-    
-    # Create a list with IDs and titles
-    local items=""
-    for img in "$cache_dir"/*.jpg; do
-        [[ -f "$img" ]] || continue
-        local id=$(basename "$img" .jpg)
-        local title=$(jq -r --arg id "$id" '.data.Page.media[] | select(.id == ($id | tonumber)) | .title.english // .title.romaji // .title.native' "${ANILIST_CACHE}/search.json" 2>/dev/null)
-        items+="${id}␟${title}"$'\n'
-    done
-    
-    # Use fzf with chafa preview
-    echo -n "$items" | fzf \
-        --delimiter='␟' \
-        --with-nth=2 \
-        --prompt="Select anime: " \
-        --height=60 \
-        --cycle \
-        --query="$search_term" \
-        --preview="chafa --size=\${FZF_PREVIEW_COLUMNS}x\${FZF_PREVIEW_LINES} --format=symbols $cache_dir/{1}.jpg 2>/dev/null || echo 'No image available'" \
-        --preview-window='right:60%' | cut -d'␟' -f1
-}
+
 
 # ==============================================
 # SEARCH FUNCTIONALITY
@@ -397,6 +373,7 @@ discover_anime() {
         "🏆 Top Rated"
         "🌸 Current Season"
         "🚀 Upcoming"
+        "👤 My AniList Profile/Library"
         "🔙 Back to Main Menu"
     )
     
@@ -410,6 +387,7 @@ discover_anime() {
         *"Top Rated"*) show_anilist_results "top_rated" ;;
         *"Current Season"*) show_anilist_results "seasonal" ;;
         *"Upcoming"*) show_anilist_results "upcoming" ;;
+        *"My AniList"*) anilist_user_menu ;;
         *) show_main_menu ;;
     esac
     set -e
@@ -488,70 +466,52 @@ interactive_anilist_search() {
         --preview="$preview_script {}" \
         --preview-window='right:60%' | grep -o "\[[0-9]*\]" | tr -d '[]')
     
-    if [[ -n "$selected_id" ]]; then
-        local anime_name=$(echo "$response" | jq -r --arg id "$selected_id" '.data.Page.media[] | select(.id == ($id | tonumber)) | .title.english // .title.romaji // .title.native')
-        
-        echo -e "\n${CYAN}════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${GREEN}Selected: ${anime_name}${NC}"
-        echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
-        
-        local action_options=(
-            "▶️ Watch Now"
-            "➕ Add to My List"
-            "❌ Cancel"
-        )
-        
-        local action=$(printf '%s\n' "${action_options[@]}" | fzf --prompt="Choose action: " --height=8 --border)
-        
-        case "${action}" in
-            *"Watch"*)
-                 # Language selection with fzf
-    local lang_options=(
-        "Use configured language (${LANGUAGE})"
-        "SUB"
-        "DUB"
+    # In interactive_anilist_search, after selecting anime:
+
+if [[ -n "$selected_id" ]]; then
+    # Get both English and Romaji titles
+    local anime_name_eng=$(echo "$response" | jq -r --arg id "$selected_id" '.data.Page.media[] | select(.id == ($id | tonumber)) | .title.english // .title.romaji // .title.native')
+    local anime_name_romaji=$(echo "$response" | jq -r --arg id "$selected_id" '.data.Page.media[] | select(.id == ($id | tonumber)) | .title.romaji // .title.english // .title.native')
+    
+    echo -e "\n${CYAN}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Selected: ${anime_name_eng}${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
+    
+    local action_options=(
+        "▶️ Watch Now"
+        "➕ Add to My List"
+        "❌ Cancel"
     )
     
-    local lang_choice=$(printf '%s\n' "${lang_options[@]}" | fzf --prompt="Select language: " --height=10 --header="Language Preference")
+    local action=$(printf '%s\n' "${action_options[@]}" | fzf --prompt="Choose action: " --height=8 --border)
     
-    local dub_flag=""
-    local lang_display="sub"
-    local preferred_lang="sub"
-    
-    case "${lang_choice}" in
-        *"DUB"*)
-            dub_flag="--dub"
-            lang_display="dub"
-            preferred_lang="dub"
-            echo -e "${GREEN}Searching for DUBBED anime${NC}"
+    case "${action}" in
+        *"Watch"*)
+            # Language selection
+            local lang_options=(
+                "Use configured language (${LANGUAGE})"
+                "SUB"
+                "DUB"
+            )
+            
+            local lang_choice=$(printf '%s\n' "${lang_options[@]}" | fzf --prompt="Select language: " --height=10 --header="Language Preference")
+            
+            local preferred_lang="sub"
+            case "${lang_choice}" in
+                *"DUB"*) preferred_lang="dub" ;;
+                *"SUB"*) preferred_lang="sub" ;;
+                *) [[ "${LANGUAGE}" == "dub" ]] && preferred_lang="dub" ;;
+            esac
+            
+            # Use Romaji title for search, English for display
+            echo -e "${YELLOW}Searching with: ${anime_name_romaji}${NC}"
+            execute_with_fallback "${anime_name_romaji}" "${preferred_lang}" "${QUALITY}" "${PLAYER}" "${SKIP_INTRO}"
             ;;
-        *"SUB"*)
-            dub_flag=""
-            lang_display="sub"
-            preferred_lang="sub"
-            echo -e "${GREEN}Searching for SUBBED anime${NC}"
-            ;;
-        *)
-            if [[ "${LANGUAGE}" == "dub" ]]; then
-                dub_flag="--dub"
-                lang_display="dub"
-                preferred_lang="dub"
-                echo -e "${GREEN}Using configured DUB preference${NC}"
-            else
-                dub_flag=""
-                lang_display="sub"
-                preferred_lang="sub"
-                echo -e "${GREEN}Using configured SUB preference${NC}"
-            fi
+        *"Add"*)
+            add_to_library "$selected_id" "$anime_name_eng"
             ;;
     esac
-                execute_with_fallback "${anime_name}" "${preferred_lang}" "${QUALITY}" "${PLAYER}" "${SKIP_INTRO}"
-                ;;
-            *"Add"*)
-                add_to_library "$selected_id" "$anime_name"
-                ;;
-        esac
-    fi
+fi
     
     rm -rf "$thumb_cache" 2>/dev/null
     echo -e "\n${GREEN}Press Enter to return to Discover menu${NC}"
@@ -598,71 +558,54 @@ show_anilist_results() {
         --preview="${preview_script} {}" \
         --preview-window='right:60%')
     
-    if [[ -n "${selected}" ]]; then
-        local anime_id=$(echo "${selected}" | grep -o "\[[0-9]*\]" | head -1 | tr -d '[]')
-        local anime_name=$(echo "${selected}" | sed -E 's/^\[[0-9]+\] //;s/ \|.*//')
-        
-        echo -e "\n${CYAN}════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${GREEN}Selected: ${anime_name}${NC}"
-        echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
-        
-        local action_options=(
-            "▶️ Watch Now"
-            "➕ Add to My List"
-            "❌ Cancel"
-        )
-        
-        local action=$(printf '%s\n' "${action_options[@]}" | fzf --prompt="Choose action: " --height=8 --border)
-        
-        case "${action}" in
-            *"Watch"*)
-                 # Language selection with fzf
-    local lang_options=(
-        "Use configured language (${LANGUAGE})"
-        "SUB"
-        "DUB"
+    # In show_anilist_results, after selecting anime:
+
+if [[ -n "${selected}" ]]; then
+    local anime_id=$(echo "${selected}" | grep -o "\[[0-9]*\]" | head -1 | tr -d '[]')
+    local anime_name_eng=$(echo "${selected}" | sed -E 's/^\[[0-9]+\] //;s/ \|.*//')
+    
+    # Also get Romaji title from the original data
+    local anime_name_romaji=$(echo "${json_data}" | jq -r --arg id "$anime_id" '.data.Page.media[] | select(.id == ($id | tonumber)) | .title.romaji // .title.english // .title.native')
+    
+    echo -e "\n${CYAN}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Selected: ${anime_name_eng}${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
+    
+    local action_options=(
+        "▶️ Watch Now"
+        "➕ Add to My List"
+        "❌ Cancel"
     )
     
-    local lang_choice=$(printf '%s\n' "${lang_options[@]}" | fzf --prompt="Select language: " --height=10 --header="Language Preference")
+    local action=$(printf '%s\n' "${action_options[@]}" | fzf --prompt="Choose action: " --height=8 --border)
     
-    local dub_flag=""
-    local lang_display="sub"
-    local preferred_lang="sub"
-    
-    case "${lang_choice}" in
-        *"DUB"*)
-            dub_flag="--dub"
-            lang_display="dub"
-            preferred_lang="dub"
-            echo -e "${GREEN}Searching for DUBBED anime${NC}"
+    case "${action}" in
+        *"Watch"*)
+            # Language selection
+            local lang_options=(
+                "Use configured language (${LANGUAGE})"
+                "SUB"
+                "DUB"
+            )
+            
+            local lang_choice=$(printf '%s\n' "${lang_options[@]}" | fzf --prompt="Select language: " --height=10)
+            
+            local preferred_lang="sub"
+            case "${lang_choice}" in
+                *"DUB"*) preferred_lang="dub" ;;
+                *"SUB"*) preferred_lang="sub" ;;
+                *) [[ "${LANGUAGE}" == "dub" ]] && preferred_lang="dub" ;;
+            esac
+            
+            # Use Romaji title for search
+            echo -e "${YELLOW}Searching with: ${anime_name_romaji}${NC}"
+            execute_with_fallback "${anime_name_romaji}" "${preferred_lang}" "${QUALITY}" "${PLAYER}" "${SKIP_INTRO}"
             ;;
-        *"SUB"*)
-            dub_flag=""
-            lang_display="sub"
-            preferred_lang="sub"
-            echo -e "${GREEN}Searching for SUBBED anime${NC}"
-            ;;
-        *)
-            if [[ "${LANGUAGE}" == "dub" ]]; then
-                dub_flag="--dub"
-                lang_display="dub"
-                preferred_lang="dub"
-                echo -e "${GREEN}Using configured DUB preference${NC}"
-            else
-                dub_flag=""
-                lang_display="sub"
-                preferred_lang="sub"
-                echo -e "${GREEN}Using configured SUB preference${NC}"
-            fi
+        *"Add"*)
+            add_to_library "$anime_id" "$anime_name_eng"
             ;;
     esac
-                execute_with_fallback "${anime_name}" "${preferred_lang}" "${QUALITY}" "${PLAYER}" "${SKIP_INTRO}"
-                ;;
-            *"Add"*)
-                add_to_library "$anime_id" "$anime_name"
-                ;;
-        esac
-    fi
+fi
 }
 
 # ==============================================

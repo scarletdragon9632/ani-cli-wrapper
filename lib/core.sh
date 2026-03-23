@@ -133,8 +133,7 @@ show_main_menu() {
     local options=(
         "🔍 Search and Watch Anime"
         "🎯 Continue Watching"
-        "📺 Discover Anime (AniList)"
-        "👤 My AniList Profile/Library"
+        "📺 Discover Anime/Library (AniList)"
         "📥 Download Anime"
         "⚙️  Settings"
         "💾 History"
@@ -149,7 +148,6 @@ show_main_menu() {
         *"Search"*) search_anime ;;
         *"Continue"*) continue_watching ;;
         *"Discover"*) discover_anime ;;
-        *"My AniList"*) anilist_user_menu ;;
         *"Download"*) download_anime ;;
         *"Settings"*) show_settings_menu ;;
         *"History"*) print_history ;;

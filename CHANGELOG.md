@@ -1,3 +1,16 @@
+## [1.7.0] - 2026-03-18
+
+### Added
+
+- Search from Anilist
+- Anime poster form Anilist
+- Login with Anilist
+
+### Fixed
+
+- Search with romaji title
+- Anilist Anime preview
+
 ## [1.6.0] - 2026-03-18
 
 ### Added

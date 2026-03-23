@@ -41,32 +41,29 @@ init_anilist_user() {
 
 # Check and refresh credentials
 check_credentials() {
-    # Load existing token
-    [[ -f "${TOKEN_FILE}" ]] && ANILIST_TOKEN=$(cat "${TOKEN_FILE}")
+    # Load existing token - use default empty if not set
+    local token=""
+    if [[ -f "${TOKEN_FILE}" ]]; then
+        token=$(cat "${TOKEN_FILE}")
+        ANILIST_TOKEN="${token}"
+    fi
     
     # If no token, get one
-    if [[ -z "${ANILIST_TOKEN}" ]]; then
+    if [[ -z "${ANILIST_TOKEN:-}" ]]; then
         echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
         echo -e "${YELLOW}AniList Authentication Required${NC}"
         echo -e "${CYAN}════════════════════════════════════════════${NC}"
         echo -e "1. Visit this URL to get your token:"
         echo -e "${GREEN}${ANILIST_AUTH_URL}${NC}"
         echo -e "\n2. After authorizing, you'll be redirected to a page that looks like:"
-        echo -e "${BLUE}https://anilist.co/api/v2/oauth/authorize?code=...${NC}"
-        echo -e "\n3. ${YELLOW}Copy the ENTIRE URL from your browser's address bar${NC}"
-        echo -e "\n${GREEN}Paste the URL here:${NC}"
+        echo -e "${BLUE}https://anilist.co/api/v2/oauth/authorize#access_token=YOUR_TOKEN${NC}"
+        echo -e "\n3. ${YELLOW}Copy the Anilist Access Token from your browser${NC}"
+        echo -e "\n${GREEN}Paste the Access Token here:${NC}"
         read -r auth_response
         
-        # Extract token from URL fragment
-        if [[ "${auth_response}" == *"access_token="* ]]; then
-            ANILIST_TOKEN=$(echo "${auth_response}" | grep -o 'access_token=[^&]*' | cut -d'=' -f2)
-        elif [[ "${auth_response}" == *"code="* ]]; then
-            # Handle code response (less common)
-            local code=$(echo "${auth_response}" | grep -o 'code=[^&]*' | cut -d'=' -f2)
-            ANILIST_TOKEN=$(exchange_code_for_token "${code}")
-        fi
+        ANILIST_TOKEN="${auth_response}"
         
-        if [[ -n "${ANILIST_TOKEN}" ]]; then
+        if [[ -n "${ANILIST_TOKEN:-}" ]]; then
             echo "${ANILIST_TOKEN}" > "${TOKEN_FILE}"
             chmod 600 "${TOKEN_FILE}"
             echo -e "${GREEN}✓ Token saved successfully${NC}"
@@ -77,14 +74,16 @@ check_credentials() {
     fi
     
     # Get user ID if not present
-    if [[ -z "${ANILIST_USER_ID}" ]]; then
-        [[ -f "${USER_ID_FILE}" ]] && ANILIST_USER_ID=$(cat "${USER_ID_FILE}")
+    if [[ -z "${ANILIST_USER_ID:-}" ]]; then
+        if [[ -f "${USER_ID_FILE}" ]]; then
+            ANILIST_USER_ID=$(cat "${USER_ID_FILE}")
+        fi
     fi
     
-    if [[ -z "${ANILIST_USER_ID}" ]]; then
+    if [[ -z "${ANILIST_USER_ID:-}" ]]; then
         echo -e "\n${YELLOW}Fetching user information...${NC}"
         
-        local query='{"query":"query { Viewer { id name avatar { large } options { titleLanguage } statistics { anime { count episodesWatched } } } }"}'
+        local query='{"query":"query { Viewer { id name } }"}'
         local response=$(curl -s -X POST "${ANILIST_API}" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
@@ -93,11 +92,10 @@ check_credentials() {
         
         ANILIST_USER_ID=$(echo "${response}" | jq -r '.data.Viewer.id // ""')
         
-        if [[ -n "${ANILIST_USER_ID}" ]]; then
+        if [[ -n "${ANILIST_USER_ID:-}" ]]; then
             echo "${ANILIST_USER_ID}" > "${USER_ID_FILE}"
-            echo -e "${GREEN}✓ User ID saved${NC}"
-            
-            # Cache user info
+            local user_name=$(echo "${response}" | jq -r '.data.Viewer.name')
+            echo -e "${GREEN}✓ Logged in as: ${user_name}${NC}"
             echo "${response}" > "${USER_CACHE}"
         else
             echo -e "${RED}✗ Failed to get user ID${NC}"
@@ -272,7 +270,7 @@ display_library_list() {
     local entries=$(echo "${response}" | jq -r '.data.MediaListCollection.lists[]?.entries[]? | 
         "[\(.mediaId)] " + 
         (.media.title.english // .media.title.romaji // .media.title.native) + 
-        " | Progress: " + (.progress | tostring) + "/" + (.media.episodes // "?" | tostring) + 
+        " | Progress: 📈 " + (.progress | tostring) + "/" + (.media.episodes // "?" | tostring) + 
         " | Score: ⭐ " + (.score // "0" | tostring) +
         " | Status: " + .status' 2>/dev/null)
     
@@ -289,10 +287,10 @@ display_library_list() {
     
     local selected=$(echo "${entries}" | fzf \
         --prompt="Select anime: " \
-        --height=30 \
+        --height=40 \
         --border \
         --preview="${preview_script} {}" \
-        --preview-window='right:60%')
+        --preview-window='right:30%')
     
     if [[ -n "${selected}" ]]; then
         local anime_id=$(echo "${selected}" | grep -o "\[[0-9]*\]" | tr -d '[]')
@@ -386,43 +384,114 @@ display_library_list() {
         esac
     fi
 }
-# Create library preview script
+# Create library preview script with embedded token and user ID
 create_library_preview_script() {
     local script="$1"
-    cat > "${script}" << 'EOF'
+    local token="${ANILIST_TOKEN}"
+    local user_id="${ANILIST_USER_ID}"
+    
+    cat > "${script}" << EOF
 #!/usr/bin/env bash
-selected="$1"
+selected="\$1"
 
-if [[ "$selected" =~ \[([0-9]+)\] ]]; then
-    id="${BASH_REMATCH[1]}"
+# Extract ID
+id=""
+if [[ "\$selected" =~ \[([0-9]+)\] ]]; then
+    id="\${BASH_REMATCH[1]}"
+fi
+
+if [[ -z "\$id" ]]; then
+    echo "Select an anime to see details"
+    exit 0
+fi
+
+# Build the query as a single string
+query='{"query":"query { Media(id: '"\$id"') { title { romaji english native } episodes status averageScore coverImage { extraLarge large medium } } MediaList(userId: ${user_id}, mediaId: '"\$id"') { progress status score } }"}'
+
+# Make the API request
+response=\$(curl -s -X POST "https://graphql.anilist.co" \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer ${token}" \\
+    -d "\$query")
+
+# Extract image URL and show it with chafa if available
+image_url=\$(echo "\$response" | jq -r '.data.Media.coverImage.extraLarge // .data.Media.coverImage.large // .data.Media.coverImage.medium // ""')
+
+if [[ -n "\$image_url" ]] && command -v chafa &> /dev/null; then
+    img_temp="/tmp/anime_preview_\${id}.jpg"
+    curl -s -L "\$image_url" -o "\$img_temp" 2>/dev/null
     
-    response=$(curl -s -X POST "https://graphql.anilist.co" \
-        -H "Content-Type: application/json" \
-        -d "{\"query\":\"query { Media(id: $id) { title { romaji english native } description episodes duration status season startDate { year } averageScore genres studios { nodes { name } } } }\"}")
-    
-    if echo "$response" | jq -e '.data.Media' > /dev/null 2>&1; then
-        title=$(echo "$response" | jq -r '.data.Media.title.english // .data.Media.title.romaji // .data.Media.title.native')
-        episodes=$(echo "$response" | jq -r '.data.Media.episodes // "?"')
-        status=$(echo "$response" | jq -r '.data.Media.status // "Unknown"')
-        score=$(echo "$response" | jq -r '.data.Media.averageScore // "N/A"')
-        genres=$(echo "$response" | jq -r '.data.Media.genres // [] | join(", ")')
+    if [[ -f "\$img_temp" ]]; then
+        term_width=\$(tput cols 2>/dev/null || echo 80)
+        term_height=\$(tput lines 2>/dev/null || echo 24)
+        preview_width=\$((term_width / 3))
+        preview_height=\$((term_height / 2))
         
-        # Calculate box width
-        term_width=$(tput cols 2>/dev/null || echo 80)
-        box_width=$((term_width - 10))
-        [[ $box_width -lt 60 ]] && box_width=60
-        [[ $box_width -gt 120 ]] && box_width=120
-        hr=$(printf '%*s' "$box_width" | tr ' ' '─')
-
-        echo "┌${hr}┐"
-        printf "│ %-*s \n" $((box_width-2)) "${title:0:$((box_width-12))}"
-        echo "├${hr}┤"
-        printf "│ Episodes: %-*s \n" $((box_width-12)) "$episodes"
-        printf "│ Status: %-*s \n" $((box_width-10)) "$status"
-        printf "│ Score: ⭐ %-*s \n" $((box_width-10)) "$score"
-        printf "│ Genres: %-*s \n" $((box_width-10)) "${genres:0:$((box_width-10))}"
-        echo "└${hr}┘"
+        [[ \$preview_width -lt 40 ]] && preview_width=40
+        [[ \$preview_height -lt 15 ]] && preview_height=15
+        
+        chafa --size="\${preview_width}x\${preview_height}" \
+            --optimize=9 \
+            --colors=full \
+            --dither=bayer \
+            --dither-intensity=0.5 \
+            --color-space=rgb \
+            --scale=max \
+            "\$img_temp" 2>/dev/null
+        echo ""
+        rm -f "\$img_temp"
     fi
+fi
+
+# Check if we got valid response
+if echo "\$response" | jq -e '.data.Media' > /dev/null 2>&1; then
+    title=\$(echo "\$response" | jq -r '.data.Media.title.english // .data.Media.title.romaji // .data.Media.title.native')
+    episodes=\$(echo "\$response" | jq -r '.data.Media.episodes // "?"')
+    status=\$(echo "\$response" | jq -r '.data.Media.status // "Unknown"')
+    score=\$(echo "\$response" | jq -r '.data.Media.averageScore // "N/A"')
+    
+    # User data
+    user_progress=\$(echo "\$response" | jq -r '.data.MediaList.progress // "0"')
+    user_status=\$(echo "\$response" | jq -r '.data.MediaList.status // ""')
+    user_score=\$(echo "\$response" | jq -r '.data.MediaList.score // ""')
+    
+    # Format user status
+    case "\$user_status" in
+        "CURRENT") user_display="Currently Watching" ;;
+        "PLANNING") user_display="Plan to Watch" ;;
+        "COMPLETED") user_display="Completed" ;;
+        "DROPPED") user_display="Dropped" ;;
+        "PAUSED") user_display="On Hold" ;;
+        "REPEATING") user_display="Rewatching" ;;
+        *) user_display="Not in list" ;;
+    esac
+    
+    # Calculate box width
+    term_width=\$(tput cols 2>/dev/null || echo 80)
+    box_width=\$((term_width - 10))
+    [[ \$box_width -lt 60 ]] && box_width=60
+    [[ \$box_width -gt 120 ]] && box_width=120
+    hr=\$(printf '%*s' "\$box_width" | tr ' ' '─')
+    
+    echo "┌\${hr}┐"
+    printf "│ %-*s \n" \$((box_width-2)) "\${title:0:\$((box_width-2))}"
+    echo "├\${hr}┤"
+    printf "│ Episodes: %-*s \n" \$((box_width-12)) "\$episodes"
+    printf "│ Status: %-*s \n" \$((box_width-10)) "\$status"
+    printf "│ Score: ⭐ %-*s \n" \$((box_width-10)) "\$score"
+    
+    # User progress section
+    echo "├\${hr}┤"
+    printf "│ \033[36mYour Library:\033[0m %-*s \n" \$((box_width-15)) ""
+    printf "│ %-*s \n" \$((box_width-12)) "\$user_display"
+    printf "│ Progress: %-*s \n" \$((box_width-12)) "\$user_progress / \$episodes"
+    if [[ -n "\$user_score" && "\$user_score" != "0" && "\$user_score" != "null" ]]; then
+        printf "│ Your Score: ⭐ %-*s \n" \$((box_width-12)) "\$user_score"
+    fi
+    echo "└\${hr}┘"
+else
+    error_msg=\$(echo "\$response" | jq -r '.errors[0].message // "Unknown error"')
+    echo "Error: \$error_msg"
 fi
 EOF
     chmod +x "${script}"
@@ -644,7 +713,7 @@ anilist_user_menu() {
         read -r
     done
     
-    show_main_menu
+    discover_anime
 }
 
 # Show user statistics
