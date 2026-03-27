@@ -43,7 +43,7 @@ show_settings_menu() {
 
 # Change quality setting
 change_quality() {
-    local options=("360p" "480p" "720p" "1080p")
+    local options=("360p" "480p" "720p" "1080p" "best" "worst")
     local choice=$(printf '%s\n' "${options[@]}" | fzf --prompt="Select quality: " --height=10 --cycle)
     
     if [[ -n "${choice}" ]]; then

@@ -131,7 +131,7 @@ execute_with_fallback() {
     if [[ "${preferred_lang}" == "dub" ]]; then
         echo -e "${GREEN}Trying DUBBED version first...${NC}"
         cmd="ani-cli"
-        [[ "${quality}" != "1080p" ]] && cmd+=" -q ${quality}"
+        [[ "${quality}" != "best" ]] && cmd+=" -q ${quality}"
         [[ "${player}" == "vlc" ]] && cmd+=" -v"
         cmd+=" --dub"
         [[ "${skip_intro}" == true ]] && cmd+=" --skip --skip-title \"${search_term}\""
@@ -161,7 +161,7 @@ execute_with_fallback() {
             if [[ "${fallback_choice}" == "🔄 Try SUBBED version" ]]; then
                 echo -e "\n${GREEN}Trying SUBBED version...${NC}"
                 cmd="ani-cli"
-                [[ "${quality}" != "1080p" ]] && cmd+=" -q ${quality}"
+                [[ "${quality}" != "best" ]] && cmd+=" -q ${quality}"
                 [[ "${player}" == "vlc" ]] && cmd+=" -v"
                 [[ "${skip_intro}" == true ]] && cmd+=" --skip --skip-title \"${search_term}\""
                 [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"
@@ -176,7 +176,7 @@ execute_with_fallback() {
     else
         # SUB preferred, try directly
         cmd="ani-cli"
-        [[ "${quality}" != "1080p" ]] && cmd+=" -q ${quality}"
+        [[ "${quality}" != "best" ]] && cmd+=" -q ${quality}"
         [[ "${player}" == "vlc" ]] && cmd+=" -v"
         [[ "${skip_intro}" == true ]] && cmd+=" --skip --skip-title \"${search_term}\""
         [[ "${ENGLISH_TITLE}" == true ]] && cmd+=" --en"

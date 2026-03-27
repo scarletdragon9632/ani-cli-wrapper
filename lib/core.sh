@@ -12,7 +12,7 @@ ANILIST_CACHE="${CACHE_DIR}/anilist"
 HEADER_DIR="${CONFIG_DIR}/headers"
 
 # Default settings
-DEFAULT_QUALITY="1080p"
+DEFAULT_QUALITY="best"
 DEFAULT_PLAYER="mpv"
 DEFAULT_LANGUAGE="dub"
 DOWNLOAD_DIR="${HOME}/Videos/ani-cli"

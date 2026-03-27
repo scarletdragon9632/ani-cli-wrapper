@@ -48,7 +48,7 @@ continue_watching() {
     esac
     
     # Add other options
-    [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
+    [[ "${QUALITY}" != "best" ]] && cmd+=" -q ${QUALITY}"
     [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
     [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip"
     
@@ -67,7 +67,7 @@ continue_watching() {
         
         if fzf_confirm "Try SUBBED version?"; then
             local sub_cmd="ani-cli -c"
-            [[ "${QUALITY}" != "1080p" ]] && sub_cmd+=" -q ${QUALITY}"
+            [[ "${QUALITY}" != "best" ]] && sub_cmd+=" -q ${QUALITY}"
             [[ "${PLAYER}" == "vlc" ]] && sub_cmd+=" -v"
             [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip"
             
@@ -195,11 +195,11 @@ print_history() {
                 # Extract title and episode from selection
                 if [[ "${selected}" =~ ^\[Ep\ ([0-9]+)\]\ (.*)$ ]]; then
                     local watched_ep="${BASH_REMATCH[1]}"
-                    local ep_num="$((BASH_REMATCH[1]+1))"
+                    local ep_num="$((BASH_REMATCH[1]))"
                     local anime_title=$(echo "${BASH_REMATCH[2]}" | sed -E 's/\s*\([^)]*\)\s*//g')
                     echo -e "\n${CYAN}════════════════════════════════════════════${NC}"
                     echo -e "${GREEN}Selected: ${anime_title}${NC}"
-                    echo -e "${YELLOW}Last watched: Episode ${watched_ep}${NC}"
+                    echo -e "${YELLOW}Last Played: Episode ${watched_ep}${NC}"
                     echo -e "${CYAN}════════════════════════════════════════════${NC}"
                     
                     # Language selection
@@ -248,7 +248,7 @@ print_history() {
                         *"Continue from episode ${ep_num}"*)
                             # Use -e flag with episode number from history
                             local cmd="ani-cli -e ${ep_num}"
-                            [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
+                            [[ "${QUALITY}" != "best" ]] && cmd+=" -q ${QUALITY}"
                             [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
                             [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
                             [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
@@ -264,7 +264,7 @@ print_history() {
                             read -r ep_input
                             if [[ -n "${ep_input}" ]]; then
                                 local cmd="ani-cli -e ${ep_input}"
-                                [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
+                                [[ "${QUALITY}" != "best" ]] && cmd+=" -q ${QUALITY}"
                                 [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
                                 [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
                                 [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""
@@ -277,7 +277,7 @@ print_history() {
                             ;;
                         *"beginning"*)
                             local cmd="ani-cli"
-                            [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
+                            [[ "${QUALITY}" != "best" ]] && cmd+=" -q ${QUALITY}"
                             [[ "${PLAYER}" == "vlc" ]] && cmd+=" -v"
                             [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
                             [[ "${SKIP_INTRO}" == true ]] && cmd+=" --skip --skip-title \"${anime_title}\""

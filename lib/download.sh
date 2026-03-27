@@ -60,7 +60,7 @@ download_anime() {
     
     local cmd="ani-cli -d"
     [[ -n "${episode_range}" ]] && cmd+=" -e ${episode_range}"
-    [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
+    [[ "${QUALITY}" != "best" ]] && cmd+=" -q ${QUALITY}"
     [[ -n "${dub_flag}" ]] && cmd+=" ${dub_flag}"
     
     cmd+=" \"${download_term}\""
@@ -91,7 +91,7 @@ download_anime() {
             echo -e "\n${GREEN}Downloading SUBBED version...${NC}"
             cmd="ani-cli -d"
             [[ -n "${episode_range}" ]] && cmd+=" -e ${episode_range}"
-            [[ "${QUALITY}" != "1080p" ]] && cmd+=" -q ${QUALITY}"
+            [[ "${QUALITY}" != "best" ]] && cmd+=" -q ${QUALITY}"
             cmd+=" \"${download_term}\""
             
             cd "${DOWNLOAD_DIR}"
